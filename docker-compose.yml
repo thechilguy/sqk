@@ -12,5 +12,33 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  backend:
+    build:
+      context: ./backend
+    container_name: cloud_backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?schema=public
+      FRONTEND_URL: http://localhost:3001
+    depends_on:
+      - postgres
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: cloud_frontend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      BACKEND_URL: http://backend:3000
+      NEXT_PUBLIC_APP_URL: http://localhost:3001
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:

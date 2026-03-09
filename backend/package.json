@@ -1,7 +1,7 @@
 {
-  "name": "cloud",
+  "name": "backend",
   "version": "1.0.0",
-  "description": "Simple NestJS server",
+  "description": "NestJS API",
   "scripts": {
     "build": "nest build",
     "start": "nest start",

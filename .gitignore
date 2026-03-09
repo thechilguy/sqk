@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+.next/
 
 # Environment
 .env
@@ -27,5 +28,8 @@ Thumbs.db
 
 # NestJS
 .nest/
+backend/generated/prisma
 
-/generated/prisma
+# Next.js
+frontend/.next/
+frontend/out/
