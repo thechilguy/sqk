@@ -5,9 +5,16 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { UiModule } from './ui/ui.module';
+import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, UsersModule, UiModule],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    PrismaModule,
+    AuthModule,
+    UsersModule,
+    UiModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
