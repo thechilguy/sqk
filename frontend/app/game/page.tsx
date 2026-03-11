@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { io, Socket } from "socket.io-client";
 import styles from "./page.module.css";
 
 type Square = "X" | "O" | null;
@@ -27,8 +28,16 @@ function getWinner(squares: Square[]): { winner: Square; line: number[] } | null
 }
 
 export default function GamePage() {
+  const [connected, setConnected] = useState(false);
   const [squares, setSquares] = useState<Square[]>(Array(9).fill(null));
   const [xIsNext, setXIsNext] = useState(true);
+
+  useEffect(() => {
+    const socket: Socket = io("http://localhost:3000");
+    socket.on("connect", () => setConnected(true));
+    socket.on("disconnect", () => setConnected(false));
+    return () => { socket.disconnect(); };
+  }, []);
 
   const result = getWinner(squares);
   const winner = result?.winner ?? null;
@@ -60,6 +69,8 @@ export default function GamePage() {
   return (
     <div className={styles.container}>
       <h1 className={styles.title}>Tic-Tac-Toe</h1>
+
+      <p>{connected ? "Connected to server ✅" : "Disconnected ❌"}</p>
 
       <div className={styles.players}>
         <div className={`${styles.player} ${!winner && !isDraw && xIsNext ? styles.active : ""}`}>
