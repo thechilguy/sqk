@@ -41,6 +41,13 @@ export default async function HomePage() {
         <h2>Your account</h2>
         <p>User ID: {user.id}</p>
       </div>
+
+      <div className={styles.card}>
+        <h2>Games</h2>
+        <Link href="/game" className={styles.gameButton}>
+          Play Tic-Tac-Toe
+        </Link>
+      </div>
     </div>
   );
 }
