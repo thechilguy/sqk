@@ -5,12 +5,19 @@ import {
   SubscribeMessage,
   MessageBody,
   ConnectedSocket,
+  WebSocketServer,
 } from '@nestjs/websockets';
 import { Socket, Server } from 'socket.io';
-import { WebSocketServer } from '@nestjs/websockets';
+import { JwtService } from '@nestjs/jwt';
+
+interface RoomPlayer {
+  socketId: string;
+  player: 'X' | 'O';
+  userId?: string;
+}
 
 interface Room {
-  players: { socketId: string; player: 'X' | 'O' }[];
+  players: RoomPlayer[];
   board: ('X' | 'O' | null)[];
   currentTurn: 'X' | 'O';
 }
@@ -22,8 +29,22 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private rooms = new Map<string, Room>();
 
+  constructor(private readonly jwtService: JwtService) {}
+
+  private extractUserId(client: Socket): string | undefined {
+    const token = client.handshake.auth?.token as string | undefined;
+    if (!token) return undefined;
+    try {
+      const payload = this.jwtService.verify(token);
+      return payload.sub as string;
+    } catch {
+      return undefined;
+    }
+  }
+
   handleConnection(client: Socket) {
-    console.log(`Client connected: ${client.id}`);
+    const userId = this.extractUserId(client);
+    console.log(`Client connected: ${client.id}${userId ? ` (userId: ${userId})` : ''}`);
   }
 
   handleDisconnect(client: Socket) {
@@ -32,9 +53,10 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('create_room')
   handleCreateRoom(@ConnectedSocket() client: Socket) {
+    const userId = this.extractUserId(client);
     const roomCode = String(Math.floor(1000 + Math.random() * 9000));
     this.rooms.set(roomCode, {
-      players: [{ socketId: client.id, player: 'X' }],
+      players: [{ socketId: client.id, player: 'X', userId }],
       board: Array(9).fill(null),
       currentTurn: 'X',
     });
@@ -55,15 +77,52 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return { error: 'Room not found or full' };
     }
 
-    room.players.push({ socketId: client.id, player: 'O' });
+    const userId = this.extractUserId(client);
+    room.players.push({ socketId: client.id, player: 'O', userId });
     client.join(data.roomCode);
     console.log(`Client ${client.id} joined room ${data.roomCode} as O`);
 
-    const gameState = { board: Array(9).fill(null), currentTurn: 'X' };
+    const gameState = { board: room.board, currentTurn: room.currentTurn };
     this.server.to(data.roomCode).emit('game_start', gameState);
     console.log(`game_start emitted to room ${data.roomCode}`);
 
     return { roomCode: data.roomCode, player: 'O' };
+  }
+
+  @SubscribeMessage('rejoin_room')
+  handleRejoinRoom(
+    @MessageBody() data: { roomCode: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const userId = this.extractUserId(client);
+    if (!userId) {
+      console.log(`rejoin_room rejected: no valid JWT from ${client.id}`);
+      return { error: 'Unauthorized' };
+    }
+
+    const room = this.rooms.get(data.roomCode);
+    if (!room) {
+      console.log(`rejoin_room failed: room ${data.roomCode} not found`);
+      return { error: 'Room not found' };
+    }
+
+    const roomPlayer = room.players.find((p) => p.userId === userId);
+    if (!roomPlayer) {
+      console.log(`rejoin_room failed: userId ${userId} not in room ${data.roomCode}`);
+      return { error: 'Player not in room' };
+    }
+
+    roomPlayer.socketId = client.id;
+    client.join(data.roomCode);
+    console.log(`Client ${client.id} rejoined room ${data.roomCode} as ${roomPlayer.player}`);
+
+    client.emit('game_rejoined', {
+      board: room.board,
+      currentTurn: room.currentTurn,
+      player: roomPlayer.player,
+    });
+
+    return { roomCode: data.roomCode, player: roomPlayer.player };
   }
 
   @SubscribeMessage('make_move')

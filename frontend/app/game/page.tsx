@@ -28,6 +28,9 @@ function getWinner(squares: Square[]): { winner: Square; line: number[] } | null
   return null;
 }
 
+const LS_ROOM_CODE = "game_roomCode";
+const LS_PLAYER   = "game_player";
+
 export default function GamePage() {
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
@@ -39,26 +42,85 @@ export default function GamePage() {
   const [board, setBoard] = useState<Square[]>(Array(9).fill(null));
   const [currentTurn, setCurrentTurn] = useState<"X" | "O">("X");
 
+  // Keep refs in sync so socket callbacks always see fresh values
+  const roomCodeRef = useRef(roomCode);
+  const phaseRef = useRef(phase);
+  useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
   useEffect(() => {
-    const socket = io("http://localhost:3000");
-    socketRef.current = socket;
+    async function init() {
+      // Fetch JWT from httpOnly cookie via API route
+      const res = await fetch("/api/auth/token");
+      const { token } = await res.json();
 
-    socket.on("connect", () => setConnected(true));
-    socket.on("disconnect", () => setConnected(false));
+      const socket = io("http://localhost:3000", {
+        auth: { token: token ?? "" },
+      });
+      socketRef.current = socket;
 
-    socket.on("game_start", (data: { board: Square[]; currentTurn: "X" | "O" }) => {
-      setBoard(data.board);
-      setCurrentTurn(data.currentTurn);
-      setPhase("game");
-    });
+      socket.on("connect", () => {
+        setConnected(true);
 
-    socket.on("move_made", (data: { board: Square[]; currentTurn: "X" | "O" }) => {
-      setBoard(data.board);
-      setCurrentTurn(data.currentTurn);
-    });
+        // On reconnect, attempt to rejoin if we were in a game
+        const savedCode   = localStorage.getItem(LS_ROOM_CODE);
+        const savedPlayer = localStorage.getItem(LS_PLAYER) as "X" | "O" | null;
+        if (savedCode && savedPlayer && phaseRef.current !== "game") {
+          socket.emit(
+            "rejoin_room",
+            { roomCode: savedCode },
+            (ack: { error?: string }) => {
+              if (ack?.error) {
+                localStorage.removeItem(LS_ROOM_CODE);
+                localStorage.removeItem(LS_PLAYER);
+              }
+            },
+          );
+        }
+      });
 
-    return () => { socket.disconnect(); };
+      socket.on("disconnect", () => setConnected(false));
+
+      socket.on("game_start", (data: { board: Square[]; currentTurn: "X" | "O" }) => {
+        setBoard(data.board);
+        setCurrentTurn(data.currentTurn);
+        setPhase("game");
+      });
+
+      socket.on("move_made", (data: { board: Square[]; currentTurn: "X" | "O" }) => {
+        setBoard(data.board);
+        setCurrentTurn(data.currentTurn);
+      });
+
+      socket.on(
+        "game_rejoined",
+        (data: { board: Square[]; currentTurn: "X" | "O"; player: "X" | "O" }) => {
+          setBoard(data.board);
+          setCurrentTurn(data.currentTurn);
+          setPlayer(data.player);
+          setRoomCode(roomCodeRef.current || localStorage.getItem(LS_ROOM_CODE) || "");
+          setPhase("game");
+          console.log(`Rejoined as ${data.player}`);
+        },
+      );
+
+      // Restore saved session on mount
+      const savedCode   = localStorage.getItem(LS_ROOM_CODE);
+      const savedPlayer = localStorage.getItem(LS_PLAYER) as "X" | "O" | null;
+      if (savedCode && savedPlayer) {
+        setRoomCode(savedCode);
+        setPlayer(savedPlayer);
+      }
+    }
+
+    init();
+    return () => { socketRef.current?.disconnect(); };
   }, []);
+
+  function persistSession(code: string, p: "X" | "O") {
+    localStorage.setItem(LS_ROOM_CODE, code);
+    localStorage.setItem(LS_PLAYER, p);
+  }
 
   function handleCreateRoom() {
     socketRef.current?.emit(
@@ -68,6 +130,7 @@ export default function GamePage() {
         setRoomCode(res.roomCode);
         setPlayer(res.player);
         setPhase("created");
+        persistSession(res.roomCode, res.player);
       },
     );
   }
@@ -83,7 +146,8 @@ export default function GamePage() {
         } else {
           setRoomCode(res.roomCode!);
           setPlayer(res.player!);
-          // game_start event will transition to "game" phase
+          persistSession(res.roomCode!, res.player!);
+          // game_start event transitions to "game" phase
         }
       },
     );
