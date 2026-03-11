@@ -91,24 +91,31 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('rejoin_room')
   handleRejoinRoom(
-    @MessageBody() data: { roomCode: string },
+    @MessageBody() data: { roomCode: string; oldSocketId?: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const userId = this.extractUserId(client);
-    if (!userId) {
-      console.log(`rejoin_room rejected: no valid JWT from ${client.id}`);
-      return { error: 'Unauthorized' };
-    }
-
     const room = this.rooms.get(data.roomCode);
     if (!room) {
       console.log(`rejoin_room failed: room ${data.roomCode} not found`);
       return { error: 'Room not found' };
     }
 
-    const roomPlayer = room.players.find((p) => p.userId === userId);
+    const userId = this.extractUserId(client);
+
+    // Match by userId first, fall back to oldSocketId for unauthenticated clients
+    let roomPlayer = userId
+      ? room.players.find((p) => p.userId === userId)
+      : undefined;
+
+    if (!roomPlayer && data.oldSocketId) {
+      roomPlayer = room.players.find((p) => p.socketId === data.oldSocketId);
+      if (roomPlayer) {
+        console.log(`rejoin_room: matched by oldSocketId ${data.oldSocketId}`);
+      }
+    }
+
     if (!roomPlayer) {
-      console.log(`rejoin_room failed: userId ${userId} not in room ${data.roomCode}`);
+      console.log(`rejoin_room failed: no matching player in room ${data.roomCode}`);
       return { error: 'Player not in room' };
     }
 

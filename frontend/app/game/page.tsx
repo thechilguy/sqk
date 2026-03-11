@@ -5,7 +5,7 @@ import { io, Socket } from "socket.io-client";
 import styles from "./page.module.css";
 
 type Square = "X" | "O" | null;
-type Phase = "lobby" | "created" | "joining" | "game";
+type Phase = "lobby" | "created" | "joining" | "reconnecting" | "game";
 
 const WINNING_LINES = [
   [0, 1, 2],
@@ -28,8 +28,15 @@ function getWinner(squares: Square[]): { winner: Square; line: number[] } | null
   return null;
 }
 
-const LS_ROOM_CODE = "game_roomCode";
-const LS_PLAYER   = "game_player";
+const LS_ROOM_CODE  = "game_roomCode";
+const LS_PLAYER     = "game_player";
+const LS_SOCKET_ID  = "game_socketId";
+
+function clearSession() {
+  localStorage.removeItem(LS_ROOM_CODE);
+  localStorage.removeItem(LS_PLAYER);
+  localStorage.removeItem(LS_SOCKET_ID);
+}
 
 export default function GamePage() {
   const socketRef = useRef<Socket | null>(null);
@@ -42,15 +49,20 @@ export default function GamePage() {
   const [board, setBoard] = useState<Square[]>(Array(9).fill(null));
   const [currentTurn, setCurrentTurn] = useState<"X" | "O">("X");
 
-  // Keep refs in sync so socket callbacks always see fresh values
-  const roomCodeRef = useRef(roomCode);
-  const phaseRef = useRef(phase);
-  useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
-  useEffect(() => { phaseRef.current = phase; }, [phase]);
-
   useEffect(() => {
+    // Synchronously check localStorage before socket connects so the
+    // "Reconnecting..." UI is shown immediately on F5.
+    const savedCode     = localStorage.getItem(LS_ROOM_CODE);
+    const savedPlayer   = localStorage.getItem(LS_PLAYER) as "X" | "O" | null;
+    const savedSocketId = localStorage.getItem(LS_SOCKET_ID);
+
+    if (savedCode && savedPlayer) {
+      setRoomCode(savedCode);
+      setPlayer(savedPlayer);
+      setPhase("reconnecting");
+    }
+
     async function init() {
-      // Fetch JWT from httpOnly cookie via API route
       const res = await fetch("/api/auth/token");
       const { token } = await res.json();
 
@@ -61,19 +73,20 @@ export default function GamePage() {
 
       socket.on("connect", () => {
         setConnected(true);
+        // Persist the new socketId for future fallback matching
+        localStorage.setItem(LS_SOCKET_ID, socket.id!);
 
-        // On reconnect, attempt to rejoin if we were in a game
-        const savedCode   = localStorage.getItem(LS_ROOM_CODE);
-        const savedPlayer = localStorage.getItem(LS_PLAYER) as "X" | "O" | null;
-        if (savedCode && savedPlayer && phaseRef.current !== "game") {
+        // If we have a saved session, attempt to rejoin immediately
+        if (savedCode && savedPlayer) {
           socket.emit(
             "rejoin_room",
-            { roomCode: savedCode },
+            { roomCode: savedCode, oldSocketId: savedSocketId },
             (ack: { error?: string }) => {
               if (ack?.error) {
-                localStorage.removeItem(LS_ROOM_CODE);
-                localStorage.removeItem(LS_PLAYER);
+                clearSession();
+                setPhase("lobby");
               }
+              // Success: wait for "game_rejoined" event to transition phase
             },
           );
         }
@@ -98,28 +111,22 @@ export default function GamePage() {
           setBoard(data.board);
           setCurrentTurn(data.currentTurn);
           setPlayer(data.player);
-          setRoomCode(roomCodeRef.current || localStorage.getItem(LS_ROOM_CODE) || "");
           setPhase("game");
-          console.log(`Rejoined as ${data.player}`);
+          console.log(`Rejoined room as ${data.player}`);
         },
       );
-
-      // Restore saved session on mount
-      const savedCode   = localStorage.getItem(LS_ROOM_CODE);
-      const savedPlayer = localStorage.getItem(LS_PLAYER) as "X" | "O" | null;
-      if (savedCode && savedPlayer) {
-        setRoomCode(savedCode);
-        setPlayer(savedPlayer);
-      }
     }
 
     init();
     return () => { socketRef.current?.disconnect(); };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function persistSession(code: string, p: "X" | "O") {
     localStorage.setItem(LS_ROOM_CODE, code);
     localStorage.setItem(LS_PLAYER, p);
+    if (socketRef.current?.id) {
+      localStorage.setItem(LS_SOCKET_ID, socketRef.current.id);
+    }
   }
 
   function handleCreateRoom() {
@@ -147,7 +154,6 @@ export default function GamePage() {
           setRoomCode(res.roomCode!);
           setPlayer(res.player!);
           persistSession(res.roomCode!, res.player!);
-          // game_start event transitions to "game" phase
         }
       },
     );
@@ -188,6 +194,12 @@ export default function GamePage() {
           <button className={styles.restart} onClick={() => setPhase("joining")}>
             Join Room
           </button>
+        </div>
+      )}
+
+      {phase === "reconnecting" && (
+        <div className={styles.lobby}>
+          <p className={styles.status}>Reconnecting to room {roomCode}...</p>
         </div>
       )}
 
