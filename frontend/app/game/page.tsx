@@ -52,6 +52,11 @@ export default function GamePage() {
       setPhase("game");
     });
 
+    socket.on("move_made", (data: { board: Square[]; currentTurn: "X" | "O" }) => {
+      setBoard(data.board);
+      setCurrentTurn(data.currentTurn);
+    });
+
     return () => { socket.disconnect(); };
   }, []);
 
@@ -102,10 +107,7 @@ export default function GamePage() {
 
   function handleClick(index: number) {
     if (board[index] || winner || currentTurn !== player) return;
-    const next = board.slice();
-    next[index] = currentTurn;
-    setBoard(next);
-    setCurrentTurn(currentTurn === "X" ? "O" : "X");
+    socketRef.current?.emit("make_move", { roomCode, index, player });
   }
 
   return (

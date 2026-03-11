@@ -11,6 +11,8 @@ import { WebSocketServer } from '@nestjs/websockets';
 
 interface Room {
   players: { socketId: string; player: 'X' | 'O' }[];
+  board: ('X' | 'O' | null)[];
+  currentTurn: 'X' | 'O';
 }
 
 @WebSocketGateway({ cors: true })
@@ -31,7 +33,11 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('create_room')
   handleCreateRoom(@ConnectedSocket() client: Socket) {
     const roomCode = String(Math.floor(1000 + Math.random() * 9000));
-    this.rooms.set(roomCode, { players: [{ socketId: client.id, player: 'X' }] });
+    this.rooms.set(roomCode, {
+      players: [{ socketId: client.id, player: 'X' }],
+      board: Array(9).fill(null),
+      currentTurn: 'X',
+    });
     client.join(roomCode);
     console.log(`Room created: ${roomCode} by ${client.id}`);
     return { roomCode, player: 'X' };
@@ -58,5 +64,38 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log(`game_start emitted to room ${data.roomCode}`);
 
     return { roomCode: data.roomCode, player: 'O' };
+  }
+
+  @SubscribeMessage('make_move')
+  handleMakeMove(
+    @MessageBody() data: { roomCode: string; index: number; player: 'X' | 'O' },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const room = this.rooms.get(data.roomCode);
+
+    if (!room) {
+      console.log(`make_move failed: room ${data.roomCode} not found`);
+      return;
+    }
+
+    if (room.currentTurn !== data.player) {
+      console.log(`make_move rejected: not ${data.player}'s turn in room ${data.roomCode}`);
+      return;
+    }
+
+    if (room.board[data.index] !== null) {
+      console.log(`make_move rejected: square ${data.index} already taken in room ${data.roomCode}`);
+      return;
+    }
+
+    room.board[data.index] = data.player;
+    room.currentTurn = data.player === 'X' ? 'O' : 'X';
+
+    console.log(`make_move: ${data.player} played index ${data.index} in room ${data.roomCode}`);
+
+    this.server.to(data.roomCode).emit('move_made', {
+      board: room.board,
+      currentTurn: room.currentTurn,
+    });
   }
 }
