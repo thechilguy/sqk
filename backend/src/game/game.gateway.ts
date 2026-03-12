@@ -9,7 +9,25 @@ import {
 } from '@nestjs/websockets';
 import { Socket, Server } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { GameService } from './game.service';
+
+type Square = 'X' | 'O' | null;
+
+const WINNING_LINES = [
+  [0, 1, 2], [3, 4, 5], [6, 7, 8],
+  [0, 3, 6], [1, 4, 7], [2, 5, 8],
+  [0, 4, 8], [2, 4, 6],
+];
+
+function getWinner(board: Square[]): 'X' | 'O' | null {
+  for (const [a, b, c] of WINNING_LINES) {
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+      return board[a] as 'X' | 'O';
+    }
+  }
+  return null;
+}
 
 @WebSocketGateway({ cors: true })
 export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -41,6 +59,12 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log(`Client disconnected: ${client.id}`);
   }
 
+  @Cron(CronExpression.EVERY_MINUTE)
+  async handleStaleRoomCleanup() {
+    const count = await this.gameService.deleteStaleRooms();
+    if (count > 0) console.log(`Stale room cleanup: deleted ${count} room(s)`);
+  }
+
   @SubscribeMessage('create_room')
   async handleCreateRoom(@ConnectedSocket() client: Socket) {
     const userId = this.extractUserId(client);
@@ -67,7 +91,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.join(data.roomCode);
     console.log(`Client ${client.id} joined room ${data.roomCode} as O`);
 
-    const board = room.board as ('X' | 'O' | null)[];
+    const board = room.board as Square[];
     this.server.to(data.roomCode).emit('game_start', { board, currentTurn: room.currentTurn });
     console.log(`game_start emitted to room ${data.roomCode}`);
 
@@ -87,7 +111,6 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const userId = this.extractUserId(client);
 
-    // Match by userId first, fall back to oldSocketId
     let roomPlayer = userId
       ? room.players.find((p) => p.userId === userId)
       : undefined;
@@ -108,7 +131,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.join(data.roomCode);
     console.log(`Client ${client.id} rejoined room ${data.roomCode} as ${roomPlayer.player}`);
 
-    const board = room.board as ('X' | 'O' | null)[];
+    const board = room.board as Square[];
     client.emit('game_rejoined', {
       board,
       currentTurn: room.currentTurn,
@@ -135,7 +158,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    const board = room.board as ('X' | 'O' | null)[];
+    const board = room.board as Square[];
     if (board[data.index] !== null) {
       console.log(`make_move rejected: square ${data.index} already taken in room ${data.roomCode}`);
       return;
@@ -147,6 +170,22 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     console.log(`make_move: ${data.player} played index ${data.index} in room ${data.roomCode}`);
 
-    this.server.to(data.roomCode).emit('move_made', { board, currentTurn: nextTurn });
+    const winner = getWinner(board);
+    const isDraw = !winner && board.every(Boolean);
+
+    if (winner || isDraw) {
+      const result = winner ?? 'draw';
+      console.log(`Game over in room ${data.roomCode}: ${result}`);
+
+      await this.gameService.finishRoom(data.roomCode);
+      this.server.to(data.roomCode).emit('game_over', { winner: result });
+
+      setTimeout(async () => {
+        await this.gameService.deleteRoom(data.roomCode);
+        console.log(`Room ${data.roomCode} deleted after game over`);
+      }, 5000);
+    } else {
+      this.server.to(data.roomCode).emit('move_made', { board, currentTurn: nextTurn });
+    }
   }
 }

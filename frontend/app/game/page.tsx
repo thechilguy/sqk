@@ -50,6 +50,7 @@ export default function GamePage() {
   const [board, setBoard] = useState<Square[]>(Array(9).fill(null));
   const [currentTurn, setCurrentTurn] = useState<"X" | "O">("X");
   const [savedSession, setSavedSession] = useState<{ code: string; player: "X" | "O" } | null>(null);
+  const [gameOver, setGameOver] = useState<{ winner: "X" | "O" | "draw" } | null>(null);
 
   useEffect(() => {
     // Read localStorage to check for a saved session (shown as a button, not auto-rejoined)
@@ -85,6 +86,11 @@ export default function GamePage() {
       socket.on("move_made", (data: { board: Square[]; currentTurn: "X" | "O" }) => {
         setBoard(data.board);
         setCurrentTurn(data.currentTurn);
+      });
+
+      socket.on("game_over", (data: { winner: "X" | "O" | "draw" }) => {
+        setGameOver({ winner: data.winner });
+        clearSession();
       });
 
       socket.on(
@@ -160,6 +166,17 @@ export default function GamePage() {
         }
       },
     );
+  }
+
+  function handlePlayAgain() {
+    clearSession();
+    setGameOver(null);
+    setBoard(Array(9).fill(null));
+    setCurrentTurn("X");
+    setPlayer(null);
+    setRoomCode("");
+    setSavedSession(null);
+    setPhase("lobby");
   }
 
   const result = getWinner(board);
@@ -271,6 +288,22 @@ export default function GamePage() {
             })}
           </div>
         </>
+      )}
+      {gameOver && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <p className={`${styles.modalTitle} ${gameOver.winner === "draw" ? styles.modalDraw : gameOver.winner === player ? styles.modalWin : styles.modalLose}`}>
+              {gameOver.winner === "draw"
+                ? "It's a draw!"
+                : gameOver.winner === player
+                ? "You win!"
+                : "You lose!"}
+            </p>
+            <button className={styles.restart} onClick={handlePlayAgain}>
+              Play Again
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

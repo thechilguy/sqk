@@ -68,4 +68,33 @@ export class GameService {
       });
     }
   }
+
+  async finishRoom(code: string) {
+    return this.prisma.room.update({
+      where: { code },
+      data: { status: 'finished' },
+    });
+  }
+
+  async deleteRoom(code: string) {
+    const room = await this.prisma.room.findUnique({ where: { code } });
+    if (!room) return;
+    await this.prisma.roomPlayer.deleteMany({ where: { roomId: room.id } });
+    await this.prisma.room.delete({ where: { code } });
+  }
+
+  async deleteStaleRooms(): Promise<number> {
+    const cutoff = new Date(Date.now() - 60 * 1000);
+    const stale = await this.prisma.room.findMany({
+      where: {
+        status: { in: ['playing', 'waiting'] },
+        createdAt: { lt: cutoff },
+      },
+    });
+    for (const room of stale) {
+      await this.prisma.roomPlayer.deleteMany({ where: { roomId: room.id } });
+      await this.prisma.room.delete({ where: { id: room.id } });
+    }
+    return stale.length;
+  }
 }
