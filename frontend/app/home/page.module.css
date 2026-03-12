@@ -67,3 +67,20 @@
   color: #666;
   line-height: 1.6;
 }
+
+.gameButton {
+  display: inline-block;
+  margin-top: 0.25rem;
+  padding: 0.55rem 1.25rem;
+  background: #0066cc;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.gameButton:hover {
+  background: #0052a3;
+}

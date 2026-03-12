@@ -1,6 +1,6 @@
-import { Injectable, ConflictException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { User } from '@prisma/client';
+import { Injectable, ConflictException } from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service";
+import { User } from "@prisma/client";
 
 @Injectable()
 export class UsersService {
@@ -13,7 +13,7 @@ export class UsersService {
   async create(email: string, hashedPassword: string): Promise<User> {
     const existing = await this.findByEmail(email);
     if (existing) {
-      throw new ConflictException('Email already registered');
+      throw new ConflictException("Email already registered");
     }
     return this.prisma.user.create({
       data: { email, password: hashedPassword },
