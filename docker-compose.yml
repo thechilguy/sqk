@@ -35,9 +35,9 @@ services:
     ports:
       - "3001:3001"
     environment:
-      NODE_ENV: development
       BACKEND_URL: http://backend:3000
       NEXT_PUBLIC_APP_URL: http://localhost:3001
+      SECURE_COOKIE: "false"
     depends_on:
       - backend
 
