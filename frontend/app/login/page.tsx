@@ -26,6 +26,8 @@ export default function LoginPage() {
     setLoading(false);
 
     if (res.ok) {
+      const { token } = await res.json();
+      localStorage.setItem('auth_token', token);
       router.push('/home');
     } else {
       const data = await res.json().catch(() => ({}));

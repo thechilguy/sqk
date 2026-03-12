@@ -60,8 +60,7 @@ export default function GamePage() {
     }
 
     async function init() {
-      const res = await fetch("/api/auth/token");
-      const { token } = await res.json();
+      const token = localStorage.getItem("auth_token");
 
       const socket = io("http://localhost:3000", {
         auth: { token: token ?? "" },

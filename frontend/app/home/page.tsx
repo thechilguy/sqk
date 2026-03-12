@@ -1,37 +1,51 @@
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import styles from './page.module.css';
 
-async function getUser(token: string) {
-  const res = await fetch(`${process.env.BACKEND_URL}/auth/me`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
-  });
-  if (!res.ok) return null;
-  return res.json() as Promise<{ id: number; email: string }>;
-}
+type User = { id: number; email: string };
 
-export default async function HomePage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('token')?.value;
+export default function HomePage() {
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
 
-  if (!token) {
-    redirect('/login');
+  useEffect(() => {
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+      router.replace('/login');
+      return;
+    }
+
+    fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then((res) => {
+      if (!res.ok) {
+        localStorage.removeItem('auth_token');
+        router.replace('/login');
+        return;
+      }
+      return res.json();
+    }).then((data) => {
+      if (data) setUser(data);
+    });
+  }, [router]);
+
+  function handleSignOut() {
+    localStorage.removeItem('auth_token');
+    router.push('/login');
   }
 
-  const user = await getUser(token);
-  if (!user) {
-    redirect('/login');
-  }
+  if (!user) return null;
 
   return (
     <div className={styles.container}>
       <header className={styles.header}>
         <span className={styles.logo}>Cloud App</span>
-        <Link href="/api/auth/logout" className={styles.logoutButton}>
+        <button onClick={handleSignOut} className={styles.logoutButton}>
           Sign out
-        </Link>
+        </button>
       </header>
 
       <h1 className={styles.welcome}>Welcome back!</h1>

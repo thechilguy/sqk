@@ -1,12 +1,15 @@
-import { redirect } from 'next/navigation';
-import { cookies } from 'next/headers';
+'use client';
 
-export default async function RootPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('token');
-  if (token) {
-    redirect('/home');
-  } else {
-    redirect('/login');
-  }
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+export default function RootPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = localStorage.getItem('auth_token');
+    router.replace(token ? '/home' : '/login');
+  }, [router]);
+
+  return null;
 }
