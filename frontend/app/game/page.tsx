@@ -5,7 +5,7 @@ import { io, Socket } from "socket.io-client";
 import styles from "./page.module.css";
 
 type Square = "X" | "O" | null;
-type Phase = "lobby" | "created" | "joining" | "reconnecting" | "game";
+type Phase = "lobby" | "created" | "joining" | "rejoining" | "game";
 
 const WINNING_LINES = [
   [0, 1, 2],
@@ -48,18 +48,15 @@ export default function GamePage() {
   const [joinError, setJoinError] = useState("");
   const [board, setBoard] = useState<Square[]>(Array(9).fill(null));
   const [currentTurn, setCurrentTurn] = useState<"X" | "O">("X");
+  const [savedSession, setSavedSession] = useState<{ code: string; player: "X" | "O" } | null>(null);
 
   useEffect(() => {
-    // Synchronously check localStorage before socket connects so the
-    // "Reconnecting..." UI is shown immediately on F5.
+    // Read localStorage to check for a saved session (shown as a button, not auto-rejoined)
     const savedCode     = localStorage.getItem(LS_ROOM_CODE);
     const savedPlayer   = localStorage.getItem(LS_PLAYER) as "X" | "O" | null;
-    const savedSocketId = localStorage.getItem(LS_SOCKET_ID);
 
     if (savedCode && savedPlayer) {
-      setRoomCode(savedCode);
-      setPlayer(savedPlayer);
-      setPhase("reconnecting");
+      setSavedSession({ code: savedCode, player: savedPlayer });
     }
 
     async function init() {
@@ -75,21 +72,6 @@ export default function GamePage() {
         setConnected(true);
         // Persist the new socketId for future fallback matching
         localStorage.setItem(LS_SOCKET_ID, socket.id!);
-
-        // If we have a saved session, attempt to rejoin immediately
-        if (savedCode && savedPlayer) {
-          socket.emit(
-            "rejoin_room",
-            { roomCode: savedCode, oldSocketId: savedSocketId },
-            (ack: { error?: string }) => {
-              if (ack?.error) {
-                clearSession();
-                setPhase("lobby");
-              }
-              // Success: wait for "game_rejoined" event to transition phase
-            },
-          );
-        }
       });
 
       socket.on("disconnect", () => setConnected(false));
@@ -111,8 +93,8 @@ export default function GamePage() {
           setBoard(data.board);
           setCurrentTurn(data.currentTurn);
           setPlayer(data.player);
+          setSavedSession(null);
           setPhase("game");
-          console.log(`Rejoined room as ${data.player}`);
         },
       );
     }
@@ -127,6 +109,24 @@ export default function GamePage() {
     if (socketRef.current?.id) {
       localStorage.setItem(LS_SOCKET_ID, socketRef.current.id);
     }
+  }
+
+  function handleRejoin() {
+    if (!savedSession) return;
+    const savedSocketId = localStorage.getItem(LS_SOCKET_ID);
+    setPhase("rejoining");
+    socketRef.current?.emit(
+      "rejoin_room",
+      { roomCode: savedSession.code, oldSocketId: savedSocketId },
+      (ack: { error?: string }) => {
+        if (ack?.error) {
+          clearSession();
+          setSavedSession(null);
+          setPhase("lobby");
+        }
+        // Success: wait for "game_rejoined" event to transition phase
+      },
+    );
   }
 
   function handleCreateRoom() {
@@ -194,12 +194,17 @@ export default function GamePage() {
           <button className={styles.restart} onClick={() => setPhase("joining")}>
             Join Room
           </button>
+          {savedSession && (
+            <button className={styles.restart} onClick={handleRejoin}>
+              Rejoin previous game (room: {savedSession.code})
+            </button>
+          )}
         </div>
       )}
 
-      {phase === "reconnecting" && (
+      {phase === "rejoining" && (
         <div className={styles.lobby}>
-          <p className={styles.status}>Reconnecting to room {roomCode}...</p>
+          <p className={styles.status}>Rejoining room {savedSession?.code}...</p>
         </div>
       )}
 
