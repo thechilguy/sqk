@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { GameGateway } from './game.gateway';
+import { GameService } from './game.service';
 
 @Module({
   imports: [
@@ -13,6 +14,6 @@ import { GameGateway } from './game.gateway';
       inject: [ConfigService],
     }),
   ],
-  providers: [GameGateway],
+  providers: [GameGateway, GameService],
 })
 export class GameModule {}

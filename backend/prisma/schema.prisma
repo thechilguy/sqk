@@ -9,8 +9,29 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  createdAt DateTime @default(now())
+  id          Int          @id @default(autoincrement())
+  email       String       @unique
+  password    String
+  createdAt   DateTime     @default(now())
+  roomPlayers RoomPlayer[]
+}
+
+model Room {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique
+  board       Json
+  currentTurn String       @default("X")
+  status      String       @default("waiting")
+  createdAt   DateTime     @default(now())
+  players     RoomPlayer[]
+}
+
+model RoomPlayer {
+  id       Int    @id @default(autoincrement())
+  roomId   Int
+  userId   Int?
+  player   String
+  socketId String
+  room     Room   @relation(fields: [roomId], references: [id])
+  user     User?  @relation(fields: [userId], references: [id])
 }
