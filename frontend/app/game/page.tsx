@@ -40,6 +40,7 @@ function clearSession() {
 
 export default function GamePage() {
   const socketRef = useRef<Socket | null>(null);
+  const rejoinCodeRef = useRef<string>("");
   const [connected, setConnected] = useState(false);
   const [phase, setPhase] = useState<Phase>("lobby");
   const [player, setPlayer] = useState<"X" | "O" | null>(null);
@@ -89,6 +90,8 @@ export default function GamePage() {
       socket.on(
         "game_rejoined",
         (data: { board: Square[]; currentTurn: "X" | "O"; player: "X" | "O" }) => {
+          console.log("[game_rejoined] roomCode:", rejoinCodeRef.current, "player:", data.player);
+          setRoomCode(rejoinCodeRef.current);
           setBoard(data.board);
           setCurrentTurn(data.currentTurn);
           setPlayer(data.player);
@@ -113,6 +116,7 @@ export default function GamePage() {
   function handleRejoin() {
     if (!savedSession) return;
     const savedSocketId = localStorage.getItem(LS_SOCKET_ID);
+    rejoinCodeRef.current = savedSession.code;
     setPhase("rejoining");
     socketRef.current?.emit(
       "rejoin_room",
@@ -175,6 +179,7 @@ export default function GamePage() {
   }
 
   function handleClick(index: number) {
+    console.log("[handleClick] roomCode:", roomCode, "player:", player, "currentTurn:", currentTurn, "square:", board[index], "connected:", socketRef.current?.connected);
     if (board[index] || winner || currentTurn !== player) return;
     socketRef.current?.emit("make_move", { roomCode, index, player });
   }
